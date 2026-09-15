@@ -6,7 +6,7 @@ import { registerRoutes } from "./app.js";
 async function main() {
   const app = Fastify({ logger: true });
   await app.register(cors, {
-    origin: env.CORS_ORIGIN.split(",").map((s) => s.trim()),
+    origin: true, // allow all origins
   });
   await registerRoutes(app);
 
