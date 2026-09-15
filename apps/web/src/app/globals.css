@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --primary: 222 47% 20%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 222 47% 31%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+.notebook-card {
+  @apply rounded-xl border bg-card p-5 text-card-foreground shadow-sm;
+}
+
+.badge-assume {
+  @apply inline-flex items-center rounded-md bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-assume;
+}
+
+.badge-system {
+  @apply inline-flex items-center rounded-md bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-system;
+}
+
+.badge-ai {
+  @apply inline-flex items-center rounded-md bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-ai;
+}
+
+.react-flow__attribution {
+  display: none !important;
+}

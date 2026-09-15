@@ -1,0 +1,154 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+  extensions = [vector]
+}
+
+model ResearchSession {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  question    String
+  status      String
+  clarification Json?
+  openuiClarify String? @map("openui_clarify")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  experiments ExperimentDefinition[]
+
+  @@map("research_sessions")
+}
+
+model ExperimentDefinition {
+  id          String   @id @default(uuid()) @db.Uuid
+  sessionId   String   @map("session_id") @db.Uuid
+  version     Int
+  definition  Json
+  hypothesis  String
+  assumptions Json
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  session   ResearchSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  backtests BacktestRun[]
+
+  @@unique([sessionId, version])
+  @@map("experiment_definitions")
+}
+
+model Dataset {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  symbol    String
+  source    String
+  version   String
+  startDate DateTime @map("start_date") @db.Date
+  endDate   DateTime @map("end_date") @db.Date
+  rowCount  Int      @map("row_count")
+  checksum  String
+  metadata  Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  bars      MarketBar[]
+  backtests BacktestRun[]
+
+  @@map("datasets")
+}
+
+model MarketBar {
+  datasetId String   @map("dataset_id") @db.Uuid
+  tradeDate DateTime @map("trade_date") @db.Date
+  open      Decimal  @db.Decimal(18, 6)
+  high      Decimal  @db.Decimal(18, 6)
+  low       Decimal  @db.Decimal(18, 6)
+  close     Decimal  @db.Decimal(18, 6)
+  volume    Decimal? @db.Decimal(24, 4)
+
+  dataset Dataset @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@id([datasetId, tradeDate])
+  @@map("market_bars")
+}
+
+model BacktestRun {
+  id           String    @id @default(uuid()) @db.Uuid
+  experimentId String    @map("experiment_id") @db.Uuid
+  datasetId    String    @map("dataset_id") @db.Uuid
+  status       String
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  metrics      Json?
+  warnings     Json?
+  errorMessage String?   @map("error_message")
+  openuiLearn  String?   @map("openui_learn")
+  interpretation Json?
+
+  experiment ExperimentDefinition @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  dataset    Dataset              @relation(fields: [datasetId], references: [id])
+  trades     BacktestTrade[]
+
+  @@map("backtest_runs")
+}
+
+model BacktestTrade {
+  id            String   @id @default(uuid()) @db.Uuid
+  backtestRunId String   @map("backtest_run_id") @db.Uuid
+  signalDate    DateTime @map("signal_date") @db.Date
+  entryDate     DateTime @map("entry_date") @db.Date
+  exitDate      DateTime @map("exit_date") @db.Date
+  entryPrice    Decimal  @map("entry_price") @db.Decimal(18, 6)
+  exitPrice     Decimal  @map("exit_price") @db.Decimal(18, 6)
+  grossReturn   Decimal  @map("gross_return") @db.Decimal(18, 10)
+  costReturn    Decimal  @map("cost_return") @db.Decimal(18, 10)
+  netReturn     Decimal  @map("net_return") @db.Decimal(18, 10)
+  metadata      Json
+
+  backtestRun BacktestRun @relation(fields: [backtestRunId], references: [id], onDelete: Cascade)
+
+  @@map("backtest_trades")
+}
+
+model KnowledgeDocument {
+  id           String   @id @default(uuid()) @db.Uuid
+  title        String
+  sourceUrl    String?  @map("source_url")
+  documentType String   @map("document_type")
+  content      String
+  metadata     Json
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  chunks KnowledgeChunk[]
+
+  @@map("knowledge_documents")
+}
+
+model KnowledgeChunk {
+  id         String                       @id @default(uuid()) @db.Uuid
+  documentId String                       @map("document_id") @db.Uuid
+  chunkIndex Int                          @map("chunk_index")
+  content    String
+  embedding  Unsupported("vector")?
+  metadata   Json
+  createdAt  DateTime                     @default(now()) @map("created_at")
+
+  document KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("knowledge_chunks")
+}
+
+model SearchCache {
+  id        String   @id @default(uuid()) @db.Uuid
+  query     String
+  provider  String
+  results   Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([query])
+  @@map("search_cache")
+}

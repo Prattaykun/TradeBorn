@@ -1,0 +1,20 @@
+{
+  "name": "TradeBorn",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter @TradeBorn/api --filter @TradeBorn/web dev",
+    "dev:api": "pnpm --filter @TradeBorn/api dev",
+    "dev:web": "pnpm --filter @TradeBorn/web dev",
+    "build": "pnpm -r build",
+    "test": "pnpm --filter @TradeBorn/api test",
+    "db:generate": "pnpm --filter @TradeBorn/api db:generate",
+    "db:migrate": "pnpm --filter @TradeBorn/api db:migrate",
+    "db:seed": "pnpm --filter @TradeBorn/api db:seed",
+    "db:push": "pnpm --filter @TradeBorn/api db:push"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,12 @@
+# Graphify skill install — not part of TradeBorn product graph
+.agents/
+.cursor/rules/graphify.mdc
+.cursor/plans/
+graphify-out/
+node_modules/
+**/dist/
+**/.next/
+**/coverage/
+*.env
+*.env.*
+!.env.example

@@ -1,0 +1,17 @@
+node_modules
+dist
+.next
+.turbo
+.env
+.env.local
+*.log
+coverage
+.DS_Store
+apps/api/prisma/migrations/**/migration_lock.toml.bak
+*.tsbuildinfo
+.vercel
+
+# graphify (local cost tracker; graph.json/report can be committed)
+graphify-out/cost.json
+graphify-out/cache/
+SUBMISSION.md
