@@ -19,7 +19,12 @@ import {
 } from "./modules/research/research.service.js";
 
 export async function registerRoutes(app: FastifyInstance) {
-  app.get("/health", async () => ({ ok: true }));
+  // GET + HEAD for Render health checks and UptimeRobot (HEAD avoids a response body).
+  app.route({
+    method: ["GET", "HEAD"],
+    url: "/health",
+    handler: async (_req, reply) => reply.code(200).send({ ok: true }),
+  });
 
   app.post("/api/research/sessions", async (req, reply) => {
     try {

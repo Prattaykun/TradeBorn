@@ -38,8 +38,10 @@ The API binds `0.0.0.0` and, on Render, listens on **`PORT`** (Render injects th
 **Build command** (repo root):
 
 ```bash
-corepack enable && pnpm install && pnpm --filter @TradeBorn/api exec prisma generate
+pnpm install && pnpm --filter @TradeBorn/api exec prisma generate
 ```
+
+Do **not** prefix with `corepack enable` or `npm install -g pnpm` — Render’s Node image already ships `pnpm` under `/usr/bin` on a read-only filesystem, and those commands fail with `EROFS`.
 
 **Start command** (repo root):
 
@@ -125,7 +127,8 @@ Then open the site and run Ask → Learn once. If the browser blocks requests, `
 | Symptom | Likely cause |
 | ------- | ------------ |
 | Deploy crash loop, `listen` / EADDRINUSE or “Application exited” | Process not bound to `PORT` / `0.0.0.0` — confirm `API_HOST=0.0.0.0` and a recent `main` that reads `PORT`. |
-| Build fails on `pnpm` | Add `NODE_VERSION=20`. `package.json` already has `"packageManager": "pnpm@9.15.0"`. |
+| Build fails on `pnpm` / `corepack` | Use the build command above (no `corepack enable`). Set `NODE_VERSION=20`. `package.json` already has `"packageManager": "pnpm@9.15.0"`. |
+| `EROFS: read-only file system, unlink '/usr/bin/pnpm'` | Drop `corepack enable` / global pnpm install from the build command — Render already provides `pnpm`. |
 | `Prisma` / `DATABASE_URL` errors | Pooled URL missing `sslmode=require`, or you put the direct URL in `DATABASE_URL`. |
 | CORS errors in the browser | `CORS_ORIGIN` must be the Vercel origin exactly (`https://….vercel.app`). |
 | Empty backtest / no bars | Seed never ran against this Neon. Shell: `pnpm db:seed`. |
