@@ -35,11 +35,11 @@ Market / action / trigger appear as fields. Threshold is edited as a **percent**
 
 ![Learn page with metrics grid and stage graph on Learn](./docs/screenshots/05-learn.png)
 
-<video src="./assets/trade_journey.mp4" controls muted playsinline width="100%">
-  <a href="./assets/trade_journey.mp4">Watch the trade simulation (MP4)</a>
-</video>
+GitHub’s README viewer does not play a repo-relative `<video>` tag. The file is in the repo — open it on GitHub to watch:
 
-![Trade simulation chart with buy/sell markers, shaded return band, and plot Δ](./docs/screenshots/06-simulation.png)
+**[▶ Watch the trade simulation](https://github.com/Prattaykun/TradeBorn/blob/main/assets/trade_journey.mp4)**
+
+[![Trade simulation — click to play on GitHub](./docs/screenshots/06-simulation.png)](https://github.com/Prattaykun/TradeBorn/blob/main/assets/trade_journey.mp4)
 
 On Learn, **Play** walks a real historical trade on OHLC from `GET /api/backtests/:id/bars`. The close path is **drawn in from the left** — only bars the playhead has reached exist; the area under that segment fills as it grows.
 
