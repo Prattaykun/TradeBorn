@@ -15,8 +15,8 @@ import {
 } from "recharts";
 import { api } from "@/lib/api";
 import { formatDate, formatPct, formatPrice } from "@/lib/format";
-import { OpenUIRenderer } from "@/openui/researchLibrary";
 import { Field, FieldGrid } from "@/components/field";
+import { Markdown } from "@/components/markdown";
 import { TradeSimulation, type SimTrade } from "@/components/trade-simulation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,9 +50,9 @@ function LearnPageInner() {
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [trades, setTrades] = useState<SimTrade[]>([]);
-  const [openui, setOpenui] = useState<string | null>(null);
   const [interpretation, setInterpretation] = useState<string | null>(null);
   const [followUps, setFollowUps] = useState<string[]>([]);
+  const [explaining, setExplaining] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -65,36 +65,50 @@ function LearnPageInner() {
         const run = await api<{
           data: Metrics;
           warnings: string[];
-          openui?: string | null;
           interpretation?: { text?: string; followUps?: string[] } | null;
         }>(`/api/backtests/${backtestId}`);
         setMetrics(run.data);
         setWarnings((run.warnings as string[]) ?? []);
+
+        // Prefer a previously saved interpretation so the card is never blank
+        // while we refresh the AI explanation.
+        const saved = run.interpretation;
+        if (saved?.text?.trim()) {
+          setInterpretation(saved.text.trim());
+          setFollowUps(saved.followUps ?? []);
+        }
 
         const tradesRes = await api<{ data: SimTrade[] }>(
           `/api/backtests/${backtestId}/trades`
         );
         setTrades(tradesRes.data);
 
+        setExplaining(true);
         try {
           const explained = await api<{
             interpretation: { text: string; followUps?: string[] };
-            openui: string | null;
             warnings?: string[];
           }>("/api/ai/explain-results", {
             method: "POST",
             body: JSON.stringify({ backtestId }),
           });
-          setInterpretation(explained.interpretation.text);
-          setFollowUps(explained.interpretation.followUps ?? []);
-          setOpenui(explained.openui);
+          const text =
+            explained.interpretation?.text?.trim() ||
+            "AI explanation unavailable. Deterministic metrics remain valid.";
+          setInterpretation(text);
+          setFollowUps(explained.interpretation?.followUps ?? []);
         } catch {
-          setInterpretation(
-            "AI explanation unavailable. Deterministic metrics below remain valid."
+          setInterpretation((prev) =>
+            prev?.trim()
+              ? prev
+              : "AI explanation unavailable. Deterministic metrics remain valid."
           );
+        } finally {
+          setExplaining(false);
         }
       } catch (e) {
         setError((e as Error).message);
+        setExplaining(false);
       }
     }
     load();
@@ -287,22 +301,33 @@ function LearnPageInner() {
             Labelled separately — never recalculates engine metrics.
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <OpenUIRenderer
-            response={openui}
-            fallback={
-              <div className="rounded-lg border-l-4 border-violet-400 bg-muted/30 p-4 text-sm">
-                <p>{interpretation}</p>
-                {followUps.length > 0 && (
-                  <ul className="mt-3 list-disc pl-5">
-                    {followUps.map((f) => (
-                      <li key={f}>{f}</li>
-                    ))}
-                  </ul>
-                )}
+        <CardContent className="space-y-3">
+          {explaining && !interpretation?.trim() ? (
+            <p className="text-sm text-muted-foreground">
+              Writing an interpretation of the engine numbers…
+            </p>
+          ) : null}
+          <div className="rounded-lg border-l-4 border-violet-400 bg-muted/30 p-4 text-sm">
+            {interpretation?.trim() ? (
+              <Markdown>{interpretation}</Markdown>
+            ) : !explaining ? (
+              <p className="text-muted-foreground">
+                No interpretation yet. Refresh after the API finishes explaining.
+              </p>
+            ) : null}
+            {followUps.length > 0 && (
+              <div className="mt-4">
+                <p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  What to investigate next
+                </p>
+                <ul className="list-disc space-y-1 pl-5">
+                  {followUps.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
               </div>
-            }
-          />
+            )}
+          </div>
         </CardContent>
       </Card>
 

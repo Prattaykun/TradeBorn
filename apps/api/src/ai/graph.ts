@@ -7,12 +7,12 @@ import {
   type Clarification,
   type ExperimentDefinition,
 } from "@TradeBorn/shared";
-import { createChatModel, hasLlmKey } from "./llm.js";
+import { invokeChat, hasLlmKey } from "./llm.js";
 import { searchRouter } from "../search/search.router.js";
 import { retrieveKnowledge } from "../rag/ingest.js";
 import { prisma } from "../infrastructure/database/prisma.js";
 import { runBacktest } from "../modules/backtests/backtest.engine.js";
-import { OPENUI_CLARIFY_PROMPT, OPENUI_LEARN_PROMPT } from "./openui-prompts.js";
+import { OPENUI_CLARIFY_PROMPT } from "./openui-prompts.js";
 
 const SYSTEM = `You are a research assistant, not a financial adviser.
 
@@ -109,12 +109,13 @@ export async function interpretQuestion(question: string): Promise<Clarification
   try {
     // Gemini rejects Zod nullable unions in response_schema ("type" list).
     // Ask for JSON and validate with Zod instead of withStructuredOutput.
-    const llm = createChatModel(0);
-    const response = await llm.invoke([
-      { role: "system", content: SYSTEM },
-      {
-        role: "user",
-        content: `Analyze this trading research question. Mark unknowns clearly and propose conservative defaults.
+    // Free-tier text models are tried in order if the preferred model fails.
+    const { content: raw } = await invokeChat(
+      [
+        { role: "system", content: SYSTEM },
+        {
+          role: "user",
+          content: `Analyze this trading research question. Mark unknowns clearly and propose conservative defaults.
 
 Return ONLY valid JSON matching this shape (no markdown fences):
 {
@@ -127,13 +128,11 @@ Return ONLY valid JSON matching this shape (no markdown fences):
 }
 
 Question: ${question}`,
-      },
-    ]);
+        },
+      ],
+      0
+    );
 
-    const raw =
-      typeof response.content === "string"
-        ? response.content
-        : JSON.stringify(response.content);
     const jsonText = raw
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```$/i, "")
@@ -209,6 +208,85 @@ export function buildExperimentFromParams(
   return ExperimentDefinitionSchema.parse(merged);
 }
 
+const LEARN_EXPLAIN_PROMPT = `You explain a finished historical backtest for a normal reader.
+
+Write markdown with exactly these headings, in order:
+
+## What the data shows
+2–4 sentences. Use the **formatted_metrics** values (already in %). Do not paste raw decimals like 0.357.
+Mention sample size (completed trades / signals) so the reader knows how thin the evidence is.
+
+## What we can reasonably conclude
+3–5 bullets. This section is required. Derive a cautious takeaway from the numbers, for example:
+- whether average/median net return was positive or negative under this definition
+- whether win rate and profit factor support an edge
+- how it compared to the benchmark (if provided)
+- that this is **one parameter set on one sample**, not proof of a live edge
+If results look weak (negative average, win rate well under 50%, profit factor under 1), say so plainly: the data does **not** support “this works” for this definition.
+
+## What we cannot conclude
+2–4 bullets. State limits: not out-of-sample, costs are simplified, overlapping was off, small sample, not investment advice.
+
+## What to investigate next
+3–4 short follow-up experiments (thresholds, holding period, overlap, uglier costs, later years).
+
+Rules:
+- Never invent numbers. Prefer formatted_metrics over raw metrics JSON.
+- Do not dump the experiment definition as a questionnaire.
+- Do not end after “questions for the user” — always finish with the conclusion sections.
+- No OpenUI Lang. No HTML. No JavaScript.`;
+
+function pctLabel(v: number | null | undefined, digits = 2): string {
+  if (v == null || Number.isNaN(v)) return "n/a";
+  return `${(v * 100).toFixed(digits)}%`;
+}
+
+function buildHeuristicConclusion(
+  metrics: Record<string, number | null | undefined>,
+  definition: ExperimentDefinition
+): string {
+  const n = metrics.completed_trades ?? 0;
+  const signals = metrics.signal_count ?? 0;
+  const win = metrics.win_rate;
+  const avg = metrics.average_net_return;
+  const med = metrics.median_net_return;
+  const dd = metrics.max_drawdown;
+  const pf = metrics.profit_factor;
+  const bench = metrics.benchmark_return;
+
+  const avgNeg = (avg ?? 0) < 0;
+  const weakEdge =
+    avgNeg || (win != null && win < 0.5) || (pf != null && pf < 1);
+
+  const conclusion = weakEdge
+    ? `Under this definition, the sample does **not** support the claim that “buying after a sharp fall works.” Average and median net returns were negative (or the win rate / profit factor stayed weak), so any bounce story is not showing up as a reliable edge here.`
+    : `Under this definition, the sample shows a **modest positive** average net return. That is interesting but not proof of an edge — the sample is small and the test is in-sample only.`;
+
+  return `## What the data shows
+
+For **${definition.market.symbol}**, a ${definition.condition.window_sessions}-session fall of ≤ ${pctLabel(definition.condition.threshold, 1)}, then hold ${definition.exit.holding_sessions} sessions: **${n} completed trades** from **${signals} signals**. Win rate **${pctLabel(win, 1)}**, average net return **${pctLabel(avg)}**, median **${pctLabel(med)}**, max drawdown **${pctLabel(dd)}**${pf != null ? `, profit factor **${pf.toFixed(2)}**` : ""}${bench != null ? `. Buy-and-hold over the same window was **${pctLabel(bench)}**` : ""}.
+
+## What we can reasonably conclude
+
+- ${conclusion}
+- With only **${n}** completed trades, the result is exploratory — one lucky or unlucky cluster of years can dominate.
+- Costs and slippage here are a **simplified bps model**, not full brokerage/taxes/impact.
+- Overlapping trades were **${definition.allow_overlapping ? "allowed" : "disabled"}**, so the trade count is not the same as the raw signal count.
+
+## What we cannot conclude
+
+- That the idea will work (or fail) on **future** NIFTY data.
+- That a different fall size / hold length would look the same.
+- That this is investment advice — it is a historical research notebook only.
+
+## What to investigate next
+
+- Test thresholds from -3% to -8%.
+- Compare 5-, 10-, and 20-session holding periods.
+- Enable overlapping trades and compare sample size / dependence.
+- Raise slippage assumptions and re-run.`;
+}
+
 export async function explainResults(input: {
   metrics: unknown;
   warnings: string[];
@@ -220,15 +298,8 @@ export async function explainResults(input: {
   openui: string;
 }> {
   const citations = input.citations ?? [];
-  const fallbackText = `Under this specific definition, the historical sample showed ${
-    (input.metrics as { completed_trades?: number })?.completed_trades ?? 0
-  } completed trades with win rate ${
-    (input.metrics as { win_rate?: number | null })?.win_rate != null
-      ? (
-          ((input.metrics as { win_rate: number }).win_rate as number) * 100
-        ).toFixed(1) + "%"
-      : "n/a"
-  }. Treat this as exploratory research, not investment advice.`;
+  const m = (input.metrics ?? {}) as Record<string, number | null | undefined>;
+  const fallbackText = buildHeuristicConclusion(m, input.definition);
 
   const followUps = [
     "Test thresholds from -3% to -8%",
@@ -245,34 +316,59 @@ export async function explainResults(input: {
     citations,
   });
 
+  const formatted_metrics = {
+    completed_trades: m.completed_trades ?? 0,
+    signal_count: m.signal_count ?? 0,
+    incomplete_trades: m.incomplete_trades ?? 0,
+    win_rate: pctLabel(m.win_rate, 1),
+    average_net_return: pctLabel(m.average_net_return),
+    median_net_return: pctLabel(m.median_net_return),
+    cumulative_compounded_return: pctLabel(m.cumulative_compounded_return),
+    max_drawdown: pctLabel(m.max_drawdown),
+    best_trade: pctLabel(m.best_trade),
+    worst_trade: pctLabel(m.worst_trade),
+    profit_factor:
+      m.profit_factor != null ? Number(m.profit_factor).toFixed(2) : "n/a",
+    benchmark_return: pctLabel(m.benchmark_return),
+  };
+
   if (!hasLlmKey()) {
     return { text: fallbackText, followUps, openui: openuiFallback };
   }
 
   try {
-    const llm = createChatModel(0.2);
-    const response = await llm.invoke([
-      { role: "system", content: SYSTEM + "\n" + OPENUI_LEARN_PROMPT },
-      {
-        role: "user",
-        content: JSON.stringify({
-          definition: input.definition,
-          metrics: input.metrics,
-          warnings: input.warnings,
-          citations,
-          instruction:
-            "Write a grounded interpretation. Then output OpenUI Lang using only allowlisted components. Copy metric numbers exactly from JSON.",
-        }),
-      },
-    ]);
-    const content =
-      typeof response.content === "string"
-        ? response.content
-        : JSON.stringify(response.content);
+    const { content } = await invokeChat(
+      [
+        { role: "system", content: SYSTEM + "\n\n" + LEARN_EXPLAIN_PROMPT },
+        {
+          role: "user",
+          content: JSON.stringify({
+            definition_summary: {
+              symbol: input.definition.market.symbol,
+              fall_window_sessions: input.definition.condition.window_sessions,
+              fall_threshold: pctLabel(input.definition.condition.threshold, 1),
+              holding_sessions: input.definition.exit.holding_sessions,
+              entry: input.definition.entry.timing,
+              allow_overlapping: input.definition.allow_overlapping,
+              hypothesis: input.definition.hypothesis,
+            },
+            formatted_metrics,
+            warnings: input.warnings,
+            citations,
+          }),
+        },
+      ],
+      0.2
+    );
 
     const openuiMatch = content.match(/ResearchSummary[\s\S]*$/);
+    let text = extractLearnText(content, fallbackText);
+    // If the model skipped the conclusion heading, append the heuristic one.
+    if (!/what we can reasonably conclude/i.test(text)) {
+      text = `${text.trim()}\n\n${fallbackText}`;
+    }
     return {
-      text: content.split("```")[0]?.slice(0, 2000) || fallbackText,
+      text,
       followUps,
       openui: openuiMatch?.[0] ?? openuiFallback,
     };
@@ -280,6 +376,35 @@ export async function explainResults(input: {
     console.warn("explainResults failed:", (err as Error).message);
     return { text: fallbackText, followUps, openui: openuiFallback };
   }
+}
+
+/** Pull readable markdown from the model reply; drop OpenUI Lang / fences. */
+function extractLearnText(content: string, fallback: string): string {
+  const raw = content.trim();
+  if (!raw) return fallback;
+
+  // Prefer prose before the first OpenUI root call.
+  let text = raw;
+  const openuiAt = text.search(/\bResearchSummary\s*\(/);
+  if (openuiAt > 0) text = text.slice(0, openuiAt);
+  else if (openuiAt === 0) {
+    const body = text.match(/body\("((?:\\.|[^"\\])*)"\)/);
+    const interp = text.match(
+      /ResultInterpretation\(\s*text\("((?:\\.|[^"\\])*)"\)\s*\)/
+    );
+    text = (interp?.[1] ?? body?.[1] ?? "")
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, '"');
+  }
+
+  text = text
+    .replace(/^```(?:markdown|md|text)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .replace(/```[\s\S]*?```/g, "")
+    .trim();
+
+  if (text.length < 24) return fallback;
+  return text.slice(0, 4000);
 }
 
 export function buildClarifyOpenUi(clarification: Clarification): string {

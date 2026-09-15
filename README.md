@@ -524,7 +524,8 @@ Or both: `pnpm dev`
 pnpm test
 ```
 
-More troubleshooting (Neon wake, Gemini model ids, shared DB): **[localrun.md](./localrun.md)**.
+More troubleshooting (Neon wake, Gemini model ids, shared DB): **[localrun.md](./localrun.md)**.  
+Deploy the API to Render: **[docs/deploy.md](./docs/deploy.md)**.
 
 ---
 

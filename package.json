@@ -12,7 +12,9 @@
     "db:generate": "pnpm --filter @TradeBorn/api db:generate",
     "db:migrate": "pnpm --filter @TradeBorn/api db:migrate",
     "db:seed": "pnpm --filter @TradeBorn/api db:seed",
-    "db:push": "pnpm --filter @TradeBorn/api db:push"
+    "db:push": "pnpm --filter @TradeBorn/api db:push",
+    "start:api": "pnpm --filter @TradeBorn/api exec tsx src/server.ts",
+    "build:api": "pnpm --filter @TradeBorn/api exec prisma generate"
   },
   "engines": {
     "node": ">=20"

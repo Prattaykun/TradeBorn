@@ -40,6 +40,9 @@ const EnvSchema = z.object({
 export type Env = z.infer<typeof EnvSchema>;
 
 function loadEnv(): Env {
+  if (process.env.PORT && !process.env.API_PORT) {
+    process.env.API_PORT = process.env.PORT;
+  }
   const parsed = EnvSchema.safeParse(process.env);
   if (!parsed.success) {
     console.warn("Env validation warnings:", parsed.error.flatten().fieldErrors);
